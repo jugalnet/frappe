@@ -47,16 +47,16 @@ export default class ChartWidget extends Widget {
 		}
 
 		this.loading = $(
-			`<div class="chart-loading-state text-muted" style="height: ${this.height}px;">${__(
-				"Loading..."
-			)}</div>`
+			`<div class="chart-loading-state text-extra-muted" style="height: ${
+				this.height
+			}px;">${__("Loading...")}</div>`
 		);
 		this.loading.appendTo(this.body);
 
 		this.empty = $(
-			`<div class="chart-loading-state text-muted" style="height: ${this.height}px;">${__(
-				"No Data"
-			)}</div>`
+			`<div class="chart-loading-state text-extra-muted" style="height: ${
+				this.height
+			}px;">${__("No Data")}</div>`
 		);
 		this.empty.hide().appendTo(this.body);
 
@@ -597,6 +597,12 @@ export default class ChartWidget extends Widget {
 		if (this.chart_doc.chart_type == "Report" && this.report_result?.chart?.fieldtype) {
 			fieldtype = this.report_result.chart.fieldtype;
 			options = this.report_result.chart.options;
+		}
+
+		if (this.chart_doc.chart_type == "Custom" && this.chart_doc.custom_options) {
+			let chart_options = JSON.parse(this.chart_doc.custom_options);
+			fieldtype = chart_options.fieldtype;
+			options = chart_options.options;
 		}
 
 		chart_args.tooltipOptions = {

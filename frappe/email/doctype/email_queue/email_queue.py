@@ -32,7 +32,6 @@ from frappe.utils import (
 	sbool,
 	split_emails,
 )
-from frappe.utils.deprecations import deprecated
 from frappe.utils.verified_command import get_signed_params
 
 
@@ -171,11 +170,18 @@ class EmailQueue(Document):
 					method(self, self.sender, recipient.recipient, message)
 				elif not frappe.flags.in_test or frappe.flags.testing_email:
 					if ctx.email_account_doc.service == "Frappe Mail":
-						ctx.frappe_mail_client.send_raw(
-							sender=self.sender,
-							recipients=recipient.recipient,
-							message=message.decode("utf-8"),
-						)
+						if self.reference_doctype == "Newsletter":
+							ctx.frappe_mail_client.send_newsletter(
+								sender=self.sender,
+								recipients=recipient.recipient,
+								message=message.decode("utf-8"),
+							)
+						else:
+							ctx.frappe_mail_client.send_raw(
+								sender=self.sender,
+								recipients=recipient.recipient,
+								message=message.decode("utf-8"),
+							)
 					else:
 						ctx.smtp_server.session.sendmail(
 							from_addr=self.sender,
@@ -215,22 +221,10 @@ class EmailQueue(Document):
 			.where(email_recipient.creation < (Now() - Interval(days=days)))
 		).run()
 
-	@frappe.whitelist()
-	def retry_sending(self):
-		if self.status == "Error":
-			self.status = "Not Sent"
-			self.save(ignore_permissions=True)
 
+from frappe.deprecation_dumpster import send_mail as _send_mail
 
-@task(queue="short")
-@deprecated
-def send_mail(email_queue_name, smtp_server_instance: SMTPServer = None):
-	"""This is equivalent to EmailQueue.send.
-
-	This provides a way to make sending mail as a background job.
-	"""
-	record = EmailQueue.find(email_queue_name)
-	record.send(smtp_server_instance=smtp_server_instance)
+send_mail = task(queue="short")(_send_mail)
 
 
 class SendMailContext:
@@ -263,7 +257,7 @@ class SendMailContext:
 
 	def __exit__(self, exc_type, exc_val, exc_tb):
 		if exc_type:
-			update_fields = {"error": "".join(traceback.format_tb(exc_tb))}
+			update_fields = {"error": frappe.get_traceback()}
 			if self.queue_doc.retry < get_email_retry_limit():
 				update_fields.update(
 					{
@@ -433,8 +427,9 @@ class SendMailContext:
 
 
 @frappe.whitelist()
-def bulk_retry(queues):
-	frappe.only_for("System Manager")
+def retry_sending(queues: str | list[str]):
+	if not frappe.has_permission("Email Queue", throw=True):
+		return
 
 	if isinstance(queues, str):
 		queues = json.loads(queues)
@@ -442,11 +437,8 @@ def bulk_retry(queues):
 	if not queues:
 		return
 
-	frappe.msgprint(
-		_("Updating Email Queue Statuses. The emails will be picked up in the next scheduled run."),
-		_("Processing..."),
-	)
-
+	# NOTE: this will probably work fine with the way current listview works (showing and selecting 20-20 records)
+	# but, ideally this should be enqueued
 	email_queue = frappe.qb.DocType("Email Queue")
 	frappe.qb.update(email_queue).set(email_queue.status, "Not Sent").set(email_queue.modified, now()).set(
 		email_queue.modified_by, frappe.session.user
@@ -780,7 +772,8 @@ class QueueBuilder:
 			with suppress(Exception):
 				q.send(smtp_server_instance=smtp_server_instance, frappe_mail_client=frappe_mail_client)
 
-		smtp_server_instance.quit()
+		if smtp_server_instance:
+			smtp_server_instance.quit()
 
 	def as_dict(self, include_recipients=True):
 		email_account = self.get_outgoing_email_account()

@@ -176,6 +176,7 @@ def update_system_settings(args):  # nosemgrep
 			"country": args.get("country"),
 			"language": get_language_code(args.get("language")) or "en",
 			"time_zone": args.get("timezone"),
+			"currency": args.get("currency"),
 			"float_precision": 3,
 			"rounding_method": "Banker's Rounding",
 			"date_format": frappe.db.get_value("Country", args.get("country"), "date_format"),
@@ -187,7 +188,7 @@ def update_system_settings(args):  # nosemgrep
 		}
 	)
 	system_settings.save()
-	if args.get("allow_recording_first_session"):
+	if args.get("enable_telemetry"):
 		frappe.db.set_default("session_recording_start", now())
 
 
